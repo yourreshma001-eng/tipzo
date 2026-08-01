@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Script from "next/script";
-import { Loader2, Sparkles } from "lucide-react";
+import { FlaskConical, Loader2, Sparkles } from "lucide-react";
 import AmountSelector from "./AmountSelector";
 import type { RazorpayCheckoutResponse } from "@/lib/razorpay-checkout";
 import type { TipOrderResponse } from "@/lib/types";
@@ -22,8 +22,8 @@ export default function TipForm({ username }: TipFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [testSending, setTestSending] = useState(false);
 
-  // Clear the success banner if the donor decides to send another tip
   useEffect(() => {
     if (success) {
       const t = setTimeout(() => setSuccess(false), 5000);
@@ -37,12 +37,11 @@ export default function TipForm({ username }: TipFormProps) {
     if (!name.trim()) return setError("Please enter your name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       return setError("Please enter a valid email for your receipt.");
-    if (amount < 10) return setError("Minimum tip amount is ₹10.");
+    if (amount < 10) return setError("Minimum tip amount is Rs 10.");
     if (!scriptReady) return setError("Payment gateway is still loading, try again in a second.");
 
     setSubmitting(true);
     try {
-      // 1. Create a Razorpay order on the server
       const orderRes = await fetch("/api/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,7 +53,6 @@ export default function TipForm({ username }: TipFormProps) {
         throw new Error(order.error ?? "Could not start the payment.");
       }
 
-      // 2. Open Razorpay Checkout
       const razorpay = new window.Razorpay({
         key: order.key_id,
         amount: order.amount,
@@ -66,7 +64,6 @@ export default function TipForm({ username }: TipFormProps) {
         theme: { color: "#06b6d4" },
         notes: { message },
         handler: async (response: RazorpayCheckoutResponse) => {
-          // 3. Verify signature server-side, then broadcast to the overlay
           try {
             const verifyRes = await fetch("/api/verify-payment", {
               method: "POST",
@@ -107,6 +104,30 @@ export default function TipForm({ username }: TipFormProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setSubmitting(false);
+    }
+  }
+
+  async function handleSendTestAlert() {
+    setError(null);
+    setTestSending(true);
+    try {
+      const res = await fetch("/api/test-alert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name || "Test Donor",
+          message: message || "This is a test alert!",
+          amount,
+          username,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Test alert failed.");
+      setSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Test alert failed.");
+    } finally {
+      setTestSending(false);
     }
   }
 
@@ -198,7 +219,26 @@ export default function TipForm({ username }: TipFormProps) {
               Processing...
             </>
           ) : (
-            <>Send Tip • ₹{amount.toLocaleString("en-IN")}</>
+            <>Send Tip - Rs {amount.toLocaleString("en-IN")}</>
+          )}
+        </button>
+
+        <button
+          type="button"
+          disabled={testSending}
+          onClick={handleSendTestAlert}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 py-3 text-sm font-semibold text-amber-400 transition hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {testSending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Sending test alert...
+            </>
+          ) : (
+            <>
+              <FlaskConical className="h-4 w-4" />
+              Send Test Alert (no payment)
+            </>
           )}
         </button>
       </div>
